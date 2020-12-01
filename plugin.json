@@ -1,6 +1,6 @@
 {
-  "slug": "StateMachine",
-  "name": "State Machine",
+  "slug": "MarianConfections-StateMachine",
+  "name": "State Machine Collection",
   "version": "1.0.0",
   "license": "GPL-3.0-or-later",
   "brand": "Marian Confections",
@@ -14,9 +14,9 @@
   "changelogUrl": "",
   "modules": [
     {
-      "slug": "MarkovState",
+      "slug": "MarianConfections-MarkovState",
       "name": "Markov State",
-      "description": "Randomly triggers one of its output states when active and advanced.",
+      "description": "Randomly triggers one of its output states when active and advanced. Useful for implementing markov chains.",
       "tags": []
     }
   ]
