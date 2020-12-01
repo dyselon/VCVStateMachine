@@ -1,0 +1,23 @@
+{
+  "slug": "StateMachine",
+  "name": "State Machine",
+  "version": "1.0.0",
+  "license": "GPL-3.0-or-later",
+  "brand": "Marian Confections",
+  "author": "Ian Cox",
+  "authorEmail": "iancox@dyselon.com",
+  "authorUrl": "",
+  "pluginUrl": "http://github.com/dyselon/",
+  "manualUrl": "",
+  "sourceUrl": "",
+  "donateUrl": "",
+  "changelogUrl": "",
+  "modules": [
+    {
+      "slug": "MarkovState",
+      "name": "Markov State",
+      "description": "Randomly triggers one of its output states when active and advanced.",
+      "tags": []
+    }
+  ]
+}
