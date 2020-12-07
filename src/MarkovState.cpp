@@ -1,4 +1,6 @@
 #include "plugin.hpp"
+#include "OutputTrigger.h"
+#include "FadingLight.h"
 
 const auto OUTPUT_STATES = 5;
 
@@ -27,10 +29,15 @@ struct MarkovState : Module {
 	};
 	enum LightIds {
 		ACTIVE_LIGHT,
+		ENUMS(TRANSITION_LIGHT, OUTPUT_STATES),
 		NUM_LIGHTS
 	};
 
 	bool active = false;
+	dsp::ClockDivider cvDivider;
+	dsp::ClockDivider uiDivider;
+	OutputTrigger outTriggers[OUTPUT_STATES];
+	FadingLight fadingLights[OUTPUT_STATES];
 
 	MarkovState() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -41,12 +48,104 @@ struct MarkovState : Module {
 		for(int i = 0; i < OUTPUT_STATES; i++) {
 			configParam(TRANSITION_BUTTON + i, 0.0f, 1.0f, 0.0f);
 			configParam(CHANCE_KNOB + i, 1.0f, 100.0f, 1.0f);
+			outTriggers[i].setOutput(&outputs[TRANSITION_OUTPUT + i]);
+			fadingLights[i].setLight(&lights[TRANSITION_LIGHT + i]);
 		}
+		cvDivider.setDivision(13);
+		uiDivider.setDivision(127);
 	}
 
 	void process(const ProcessArgs& args) override {
+		if(cvDivider.process()) {
+			processCV(args);
+		}
+
+		processSignal(args);
+
+		if(uiDivider.process()) {
+			processUI(args);
+		}
+
+		for(int i = 0; i < OUTPUT_STATES; i++) {
+			outTriggers[i].process(args);
+		}	
+	}
+
+	void processSignal(const ProcessArgs& args) {
+		auto signal_in = &inputs[SIGNAL_INPUT];
+		auto signal_adjust = &params[SIGNAL_ADJUST];
 		auto signal_out = &outputs[SIGNAL_OUTPUT];
-		signal_out->setVoltage(5.0f);
+
+		// if not active or nothing is connected to the output, there's nothing to do at audio rate.
+		if(!(signal_out->isConnected())) { return; }
+
+		// pass the input to the output, offset by the CV.
+		const auto knob_val = signal_adjust->getValue();
+		if(!signal_in->isConnected()) {
+			auto current_output = active ? knob_val : 0.0f;
+			signal_out->setVoltage(current_output);
+		}
+		signal_out->setChannels(signal_in->getChannels());
+		for(auto ch = signal_in->getChannels() - 1; ch >= 0; ch--) {
+			float current_output = signal_in->getVoltage(ch) + knob_val;
+			if(!active) { current_output = 0.0f; }
+			signal_out->setVoltage(current_output);
+		}
+	}
+
+	void processCV(const ProcessArgs& args) {
+		// if reset, deactivate
+		bool reset_button_smashed = params[RESET_BUTTON].getValue() > 0.1f;
+		bool reset_triggered = inputs[RESET_INPUT].getVoltage() > 0.1f;
+		if(reset_button_smashed || reset_triggered) {
+			active = false;
+		}
+		
+		// if actived, set it as active so the rest of the stuff works.
+		bool activate_button_smashed = params[ACTIVATE_BUTTON].getValue() > 0.1f;
+		bool activate_triggered = inputs[ACTIVATE_INPUT].getVoltage() > 0.1f;
+		if(activate_button_smashed || activate_triggered) {
+			active = true;
+		}
+
+		if(active) {
+			// if active and advanced, trigger a following state, and deactivate
+			bool advance_button_smashed = params[ADVANCE_BUTTON].getValue() > 0.1f;
+			bool advance_triggered = inputs[ADVANCE_INPUT].getVoltage() > 0.1f;
+			if(advance_button_smashed || advance_triggered) {
+				uint nextState = 0; // TODO: select random (connected) output state
+				advance(nextState);
+			}
+
+			// if any of the manual advance buttons are hit
+			for(int i = 0; i < OUTPUT_STATES; i++) {
+				bool tx_button = params[TRANSITION_BUTTON + i].getValue() > 0.1f;
+				if(tx_button) { advance(i); }
+			}
+		}
+	}
+
+	void advance(uint outState) {
+		active = false;
+		outTriggers[outState].trigger();
+		for(int i = 0; i < OUTPUT_STATES; i++) {
+			fadingLights[i].reset();
+		}
+		fadingLights[outState].trigger();
+	}
+
+	void processUI(const ProcessArgs& args) {
+		// update UI
+		auto light = &lights[ACTIVE_LIGHT];
+		auto intensity = active ? 1.0f : 0.0f;
+		light->setBrightness(intensity);
+
+		// update the transition lights
+		for(int i = 0; i < OUTPUT_STATES; i++) {
+			fadingLights[i].process(args, 127);
+		}
+
+		// TODO: update random counters (woof)
 	}
 };
 
@@ -93,9 +192,14 @@ struct MarkovStateWidget : ModuleWidget {
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(51.878, 93.982)), module, MarkovState::TRANSITION_OUTPUT + 3));
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(51.878, 109.092)), module, MarkovState::TRANSITION_OUTPUT + 4));
 
-		addChild(createLightCentered<MediumLight<RedLight>>(mm2px(Vec(9.158, 28.224)), module, MarkovState::ACTIVE_LIGHT));
+		addChild(createLightCentered<MediumLight<RedLight>>(mm2px(Vec(9.158, 24)), module, MarkovState::ACTIVE_LIGHT));
+		addChild(createLightCentered<MediumLight<RedLight>>(mm2px(Vec(8.454, 49.472)), module, MarkovState::TRANSITION_LIGHT + 0));
+		addChild(createLightCentered<MediumLight<RedLight>>(mm2px(Vec(8.454, 64.234)), module, MarkovState::TRANSITION_LIGHT + 1));
+		addChild(createLightCentered<MediumLight<RedLight>>(mm2px(Vec(8.454, 79.221)), module, MarkovState::TRANSITION_LIGHT + 2));
+		addChild(createLightCentered<MediumLight<RedLight>>(mm2px(Vec(8.454, 93.982)), module, MarkovState::TRANSITION_LIGHT + 3));
+		addChild(createLightCentered<MediumLight<RedLight>>(mm2px(Vec(8.454, 109.092)), module, MarkovState::TRANSITION_LIGHT + 4));
 	}
 };
 
 
-Model* modelMarkovState = createModel<MarkovState, MarkovStateWidget>("MarkovState");
+Model* modelMarkovState = createModel<MarkovState, MarkovStateWidget>("MarianConfections-MarkovState");
