@@ -1,6 +1,7 @@
 #include "plugin.hpp"
 #include "OutputTrigger.h"
 #include "FadingLight.h"
+#include "EdgeDetector.h"
 
 const auto OUTPUT_STATES = 5;
 
@@ -38,6 +39,9 @@ struct MarkovState : Module {
 	dsp::ClockDivider uiDivider;
 	OutputTrigger outTriggers[OUTPUT_STATES];
 	FadingLight fadingLights[OUTPUT_STATES];
+	EdgeDetector activateTrigger;
+	EdgeDetector advanceTrigger;
+	EdgeDetector resetTrigger;
 
 	MarkovState() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -47,10 +51,13 @@ struct MarkovState : Module {
 		configParam(SIGNAL_ADJUST, -5.0f, 5.0f, 0.0f);
 		for(int i = 0; i < OUTPUT_STATES; i++) {
 			configParam(TRANSITION_BUTTON + i, 0.0f, 1.0f, 0.0f);
-			configParam(CHANCE_KNOB + i, 1.0f, 100.0f, 1.0f);
+			configParam(CHANCE_KNOB + i, 0.0f, 10.0f, 1.0f);
 			outTriggers[i].setOutput(&outputs[TRANSITION_OUTPUT + i]);
 			fadingLights[i].setLight(&lights[TRANSITION_LIGHT + i]);
 		}
+		activateTrigger.setInput(&inputs[ACTIVATE_INPUT]);
+		advanceTrigger.setInput(&inputs[ADVANCE_INPUT]);
+		resetTrigger.setInput(&inputs[RESET_INPUT]);
 		cvDivider.setDivision(13);
 		uiDivider.setDivision(127);
 	}
@@ -96,14 +103,14 @@ struct MarkovState : Module {
 	void processCV(const ProcessArgs& args) {
 		// if reset, deactivate
 		bool reset_button_smashed = params[RESET_BUTTON].getValue() > 0.1f;
-		bool reset_triggered = inputs[RESET_INPUT].getVoltage() > 0.1f;
+		bool reset_triggered = resetTrigger.process();
 		if(reset_button_smashed || reset_triggered) {
 			active = false;
 		}
 		
 		// if actived, set it as active so the rest of the stuff works.
 		bool activate_button_smashed = params[ACTIVATE_BUTTON].getValue() > 0.1f;
-		bool activate_triggered = inputs[ACTIVATE_INPUT].getVoltage() > 0.1f;
+		bool activate_triggered = activateTrigger.process();
 		if(activate_button_smashed || activate_triggered) {
 			active = true;
 		}
@@ -111,9 +118,9 @@ struct MarkovState : Module {
 		if(active) {
 			// if active and advanced, trigger a following state, and deactivate
 			bool advance_button_smashed = params[ADVANCE_BUTTON].getValue() > 0.1f;
-			bool advance_triggered = inputs[ADVANCE_INPUT].getVoltage() > 0.1f;
+			bool advance_triggered = advanceTrigger.process();
 			if(advance_button_smashed || advance_triggered) {
-				uint nextState = 0; // TODO: select random (connected) output state
+				uint nextState = selectRandomOutput();
 				advance(nextState);
 			}
 
@@ -123,6 +130,25 @@ struct MarkovState : Module {
 				if(tx_button) { advance(i); }
 			}
 		}
+	}
+
+	uint selectRandomOutput() {
+		float chances[5];
+		float total = 0.0f;
+		for(uint i = 0; i < 5; i++) {
+			auto weighted = params[CHANCE_KNOB + i].getValue();
+			if(inputs[TRANSITION_INPUT + i].isConnected()) {
+				weighted += inputs[TRANSITION_INPUT + i].getVoltage();
+			}
+			if(weighted < 0.0f) { weighted = 0.0f; }
+			chances[i] = weighted + total;
+			total = chances[i];
+		}
+		float selectionWeighted = random::uniform() * total;
+		for(uint i = 0; i < 5; i++) {
+			if(selectionWeighted < chances[i] && outputs[TRANSITION_OUTPUT + i].isConnected()) { return i; }
+		}
+		return 0;
 	}
 
 	void advance(uint outState) {
