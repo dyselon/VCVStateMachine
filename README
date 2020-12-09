@@ -1,24 +1,6 @@
-MarkovState
+A module to help implement finite state machines in VCV Rack. Currently, there is only a single module implementing a markov chain node. I intend to expand it out to a toolkit of generic and specific fsm modules, and I will may try a couple of different UI variations on the same modules.
 
-When active passes input to output
-When advanced while active, deactivates, and randomly triggers one of its outputs
+Markov State
+------------
+Represents a single node in a markov chain. When active, it passes its signal input through to its signal output. When advanced, it becomes inactive, and randomly triggers one of the following states.
 
-
-
-
-INPUT AREA
-Activate (& button)
-Reset (& button)
-Advance (& buggon)
-
-SIGNAL AREA
-Input
-Offset
-Output
-
-STATES AREA
-n x
-State Chance CV
-State Chance Offset
-Trigger Output + Button
-Numeric Display of Current Chances
